@@ -1,58 +1,65 @@
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message
 from aiogram import Router, F
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
+from app.database.requests import get_ticket
+import re
+import os
 
 admin = Router()
 
-class Answer_to_user(StatesGroup):
-    message = State()
+TICKET_RE = re.compile(r"#(\d+)")
 
+@admin.message(F.reply_to_message)
+async def admin_reply(message: Message, db):
+    user_channel_status = await message.bot.get_chat_member(
+        chat_id=int(os.getenv("GROUP_ID")),
+        user_id=message.from_user.id
+    )
 
+    if user_channel_status.status == 'left':
+        return
 
+    src = message.reply_to_message.text
+    m = TICKET_RE.search(src)
+    if not m:
+        return
 
+    ticket_id = int(m.group(1))
+    ticket = await get_ticket(db, ticket_id)
 
+    if not ticket:
+        await message.reply("❌ Тикет не найден в БД")
+        return
 
+    target_user_id = int(ticket["user_id"])
+    admin_name = message.from_user.full_name
+    reply_text = message.text
 
+    try:
+        await message.bot.send_message(
+            chat_id=target_user_id,
+            text=(
+                f"💬 Ответ от {admin_name}\n"
+                f"По обращению #{ticket_id}:\n\n"
+                f"{reply_text}"
+            )
+        )
 
+    except TelegramForbiddenError:
+        # пользователь заблокировал бота
+        await message.bot.set_message_reaction(
+            message.chat.id,
+            message.message_id,
+            reaction=[{"type": "emoji", "emoji": "👎"}]
+        )
 
+    except TelegramBadRequest as e:
+        # некорректный user_id и т.п.
+        await message.reply(f"❌ Ошибка отправки: {e.message}")
 
-# @admin.callback_query(F.data.startswith('answer:'))
-# async def get_answer_to_message(callback: CallbackQuery, state: FSMContext):
-#     user_id = int(callback.data.split(":")[1])
-#     name = callback.data.split(":")[2]
-#     message_from_user = callback.data.split(":")[3]
-#     user_question_id = callback.message.message_id
-
-#     await callback.answer()
-
-#     await state.update_data(user_id = user_id)
-#     await state.update_data(user_question_id = user_question_id)
-#     await state.update_data(name = name)
-#     await state.update_data(message_from_user = message_from_user)
-
-#     text2 = await callback.message.reply("Введите ответ пользователю:")
-#     text2_id = text2.message_id
-#     await state.update_data(text2_id = text2_id)
-
-#     await state.set_state(Answer_to_user.message)
-
-# @admin.message(Answer_to_user.message)
-# async def answer_to_message(message: Message, state: FSMContext):
-
-#     answer = message.text
-#     data = await state.get_data()
-#     user_id = data["user_id"]
-#     answered_name = message.from_user.full_name
-#     user_question_id = data["user_question_id"]
-#     text2_id = data["text2_id"]
-#     messages_to_delete = [user_question_id, text2_id]
-#     name = data["name"]
-#     message_from_user = data["message_from_user"]
-
-
-#     await message.delete()
-#     await message.bot.delete_messages(chat_id='-1003628078973', message_ids=messages_to_delete)
-#     await message.answer(text=f'<b>Вопрос от {name}:</b> {message_from_user}\n<b>Ответ от {answered_name}:</b> {answer}',parse_mode='HTML')
-#     await message.bot.send_message(chat_id=user_id, text=f'Пришёл ответ от {answered_name}: \n{answer}')
-#     await state.clear()
+    else:
+        await message.bot.set_message_reaction(
+            message.chat.id,
+            message.message_id,
+            reaction=[{"type": "emoji", "emoji": "🔥"}]
+        )
