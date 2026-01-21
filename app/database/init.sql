@@ -3,7 +3,8 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     user_id BIGINT NOT NULL,
     username TEXT,
     full_name TEXT,
-    user_message TEXT NOT NULL,
+    user_message TEXT,
+    root_message_id BIGINT,
     status TEXT NOT NULL DEFAULT 'open'
 );
 

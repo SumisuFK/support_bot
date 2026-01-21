@@ -25,6 +25,17 @@ async def create_ticket(pool, user_id, username, full_name, text):
         )
         return int(ticket_id)
 
+async def set_root_message_id(pool, ticket_id, root_message_id):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE support_tickets
+            SET root_message_id = $2
+            WHERE id = $1
+            """,
+            ticket_id, root_message_id
+        )
+
 async def get_ticket(pool, ticket_id):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -32,3 +43,14 @@ async def get_ticket(pool, ticket_id):
             ticket_id
         )
         return dict(row) if row else None
+
+async def set_status(pool, ticket_id, ticket_status):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE support_tickets
+            SET status = $2
+            WHERE id = $1
+            """,
+            ticket_id, ticket_status
+        )
